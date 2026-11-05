@@ -1,6 +1,6 @@
 /* Reporting Terrain : fonctionnement hors ligne (version web installable, iPhone compris).
    Les données restent sur l'appareil (IndexedDB) ; ce fichier ne met en cache que l'application. */
-const CACHE = 'reporting-terrain-3.5.0';
+const CACHE = 'reporting-terrain-3.5.1';
 const FICHIERS = ['./', './index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png', './apple-touch-icon.png'];
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(FICHIERS)).then(() => self.skipWaiting()));

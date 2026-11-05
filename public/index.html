@@ -134,7 +134,7 @@ details.repli[open]>summary::before{transform:rotate(90deg)}
 .imp-haut select{flex:1;min-width:0}
 .imp-haut input[type=date]{width:150px;flex:none}
 .imp-sel{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
-.imp-sel select{flex:1 1 140px;min-width:0;font-size:14px;min-height:42px}
+.imp-sel select{flex:1 1 140px;min-width:0;font-size:16px;min-height:42px}
 .imp-txt{margin:8px 0 2px;font-weight:600;font-size:14px}
 .imp-det{margin:2px 0;font-size:13px;color:#2b4a6b}
 .imp-orig{margin:4px 0 0;font-size:12px;color:var(--muted)}
@@ -223,7 +223,7 @@ details.repli[open]>summary::before{transform:rotate(90deg)}
 .liste-jour .c .o{font-size:13px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .liste-jour.manque{border-style:dashed;background:transparent}
 /* ---- navigation basse ---- */
-nav.bas{position:fixed;left:0;right:0;bottom:0;z-index:40;background:#fff;border-top:1px solid var(--line);display:flex;justify-content:center;border-bottom:var(--safe-bottom) solid #1f2328;box-shadow:0 -2px 10px rgba(0,0,0,.05)}
+nav.bas{position:fixed;left:0;right:0;bottom:0;z-index:40;background:#fff;border-top:1px solid var(--line);display:flex;justify-content:center;padding-bottom:var(--safe-bottom);box-shadow:0 -2px 10px rgba(0,0,0,.05)}
 nav.bas .in{display:grid;grid-template-columns:repeat(5,1fr);width:100%;max-width:760px}
 nav.bas button{border:0;background:none;height:var(--nav-h);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;font-size:12px;color:var(--muted);cursor:pointer;font-weight:600}
 nav.bas button svg{width:24px;height:24px}
@@ -412,6 +412,10 @@ nav.bas button[aria-current="page"] svg{filter:drop-shadow(0 2px 4px rgba(232,89
 @media (min-width:900px){.grille-tdb{grid-template-columns:repeat(2,minmax(0,1fr))}}
 .page .fig-graph{margin:0;background:#f8f9fa;border:1px solid #e9ecef;border-radius:6px;padding:6px}
 .page .fig-graph figcaption{font-size:12px;font-weight:700;margin:0 0 4px}
+/* iPhone : aucun champ sous 16 px (évite le zoom automatique de Safari), pas de débordement horizontal */
+input,select,textarea{font-size:max(16px,1em)}
+main{overflow-x:clip}
+html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
 </style>
 </head>
 <body>
@@ -1068,7 +1072,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
    ===================================================================== */
 
 /* ===================== 1. CONSTANTES ===================== */
-const APP_VERSION = '3.5.0';
+const APP_VERSION = '3.5.1';
 const STATUTS_INC = ['Traité', 'En cours', 'Escaladé'];
 const COUL_STATUT = { 'Traité': '#2b8a3e', 'En cours': '#e8590c', 'Escaladé': '#c92a2a' };
 const MESURES = [
@@ -3800,6 +3804,34 @@ async function demarrer() {
   if (!dossierConfigure()) afficherEcranDossier(); else if (aDesDonnees()) planifierSauvegardeAuto(3000);
   nettoyerPhotos();
   enregistrerServiceWorker();
+  correctifsIOS();
+}
+/** Safari (iPhone) : après fermeture du clavier, les barres fixes (navigation, en-tête) peuvent rester décalées
+ *  au milieu de l'écran. On force Safari à recalculer la position dès que le clavier se referme. */
+function correctifsIOS() {
+  if (!estIOS() || estNatif()) return;
+  const recaler = () => requestAnimationFrame(() => {
+    const y = window.scrollY;
+    window.scrollTo(window.scrollX, y + 1); window.scrollTo(window.scrollX, y);
+    document.documentElement.style.minHeight = window.innerHeight + 'px';
+    requestAnimationFrame(() => { document.documentElement.style.minHeight = ''; });
+  });
+  document.addEventListener('focusout', e => {
+    if (!e.target.matches || !e.target.matches('input,textarea,select')) return;
+    setTimeout(() => { const a = document.activeElement; if (!a || !a.matches('input,textarea,select')) recaler(); }, 80);
+    setTimeout(recaler, 400);
+  });
+  const vv = window.visualViewport;
+  if (vv) {
+    let ouvert = false;
+    vv.addEventListener('resize', () => {
+      const clavier = vv.height < window.innerHeight * 0.8;
+      if (ouvert && !clavier) { recaler(); setTimeout(recaler, 300); }
+      ouvert = clavier;
+    });
+  }
+  window.addEventListener('orientationchange', () => setTimeout(recaler, 400));
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) recaler(); });
 }
 /** Version web installable (iPhone, navigateur) : fonctionnement hors ligne grâce au service worker. */
 function enregistrerServiceWorker() {
