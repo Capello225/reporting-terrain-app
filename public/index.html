@@ -1481,7 +1481,8 @@ const parHeure = (a, b) => (a.heure || '').localeCompare(b.heure || '') || (a.cr
 function valeursJour(d) {
   const v = valeurs(STATE.jours[d] || jourVide());
   v.interv = somme(STATE.taches.filter(t => t.date === d && estDemande(t.type)).map(qteT));
-  const auto = { adr: v.interv, trt: v.interv, enc: null }; // « en cours » reste une saisie volontaire
+  // « En cours » reste une saisie volontaire ; les demandes en attente font partie des demandes adressées
+  const auto = { adr: v.interv + (v.enc ?? 0), trt: v.interv, enc: null };
   v.calcAuto = auto;
   for (const m of MESURES) {
     v[m.k + 'Auto'] = false;
@@ -1765,7 +1766,7 @@ function stats(du, au, part = '') {
     const j = part ? null : STATE.jours[d]; const v = part ? valeursJourPart(d, part) : valeursJour(d);
     const inc = incidentsDu(d).filter(incDePart); const tch = tachesDu(d).filter(dePart); const rens = part ? !!(inc.length || tch.length) : jourRenseigne(d);
     const encM = part || !STATE.jours[d] ? null : valeurs(STATE.jours[d]).enc;
-    return { d, x, adr: v.adr, trt: v.trt, enc: v.enc, encM, auto: v.auto, nInc: rens ? inc.length : null, nT: rens ? somme(tch.map(qteT)) : null, nI: rens ? v.interv : null, inc, tch, rens, obs: j ? (j.obsR || j.obs) : '' };
+    return { d, x, adr: v.adr, trt: v.trt, enc: v.enc, encM, adrAuto: !!v.adrAuto, auto: v.auto, nInc: rens ? inc.length : null, nT: rens ? somme(tch.map(qteT)) : null, nI: rens ? v.interv : null, inc, tch, rens, obs: j ? (j.obsR || j.obs) : '' };
   });
   const rens = parJour.filter(p => p.rens);
   const serie = k => parJour.filter(p => p[k] != null);
@@ -1825,7 +1826,7 @@ function stats(du, au, part = '') {
     du, au, part, jours, parJour, nbJours: jours.length, nbRens: rens.length, manquants: jours.length - rens.length,
     adr: { total: totAdr, n: adr.length, moy: adr.length ? totAdr / adr.length : null, tend: tendance(adr.map(p => ({ x: p.x, y: p.adr }))) },
     trt: { total: totTrt, n: trt.length, moy: trt.length ? totTrt / trt.length : null, tend: tendance(trt.map(p => ({ x: p.x, y: p.trt }))), auto: parJour.filter(p => p.auto).length },
-    enc: { total: totEnc, date: dateEnc, dernier: dernierEnc ? dernierEnc.enc : null, dateDernier: dernierEnc ? dernierEnc.d : null, moy: enc.length ? somme(enc.map(p => p.enc)) / enc.length : null, n: enc.length, tend: tendance(enc.map(p => ({ x: p.x, y: p.enc }))) },
+    enc: { total: totEnc, date: dateEnc, dansAdr: somme(parJour.filter(p => p.adrAuto && p.encM != null).map(p => p.encM)), dernier: dernierEnc ? dernierEnc.enc : null, dateDernier: dernierEnc ? dernierEnc.d : null, moy: enc.length ? somme(enc.map(p => p.enc)) / enc.length : null, n: enc.length, tend: tendance(enc.map(p => ({ x: p.x, y: p.enc }))) },
     taux: somme(deux.map(p => p.adr)) ? somme(deux.map(p => p.trt)) / somme(deux.map(p => p.adr)) : null,
     tch: { liste: tchs, total: totT, n: tchs.length, moy: rens.length ? totT / rens.length : null, parType, tend: tendance(rens.map(p => ({ x: p.x, y: p.nT }))) },
     interv, anim, depl, ctrl, extra, parPart,
@@ -1934,7 +1935,7 @@ function faitsMarquants(s, prec) {
     if (s.trt.n) p.push(`${fmt(s.trt.total)} ${pl(s.trt.total, 'traitée', 'traitées')}${s.taux != null ? ` (taux de traitement ${Math.round(s.taux * 100)} %)` : ''}`);
     if (s.enc.total != null) p.push(s.enc.total ? `${fmt(s.enc.total)} encore en cours` : 'aucune en attente');
     F.push(`${s.adr.n ? fmt(s.adr.total) : '—'} ${pl(s.adr.total || 0, 'demande adressée', 'demandes adressées')}${p.length ? ' : ' + listeEt(p) : ''}.`);
-    const det = [...itemsActivites(s.interv.parType.slice(0, 5), false), ...(s.interv.parType.length > 5 ? ['autres activités'] : []), ...(autresDemandes(s) ? [`${fmt(autresDemandes(s))} ${pl(autresDemandes(s), 'autre demande', 'autres demandes')}`] : [])];
+    const det = [...itemsActivites(s.interv.parType.slice(0, 5), false), ...(s.interv.parType.length > 5 ? ['autres activités'] : []), ...(s.enc.dansAdr ? [`${fmt(s.enc.dansAdr)} ${pl(s.enc.dansAdr, 'demande en attente', 'demandes en attente')}`] : []), ...(autresDemandes(s) ? [`${fmt(autresDemandes(s))} ${pl(autresDemandes(s), 'autre demande', 'autres demandes')}`] : [])];
     if (det.length) F.push(`Détail des demandes : ${listeEt(det)}.`);
   }
   const ex = [...itemsActivites(s.anim.parType, true), ...itemsActivites(s.depl.parType, false), ...itemsActivites(s.ctrl.parType, false)];
@@ -1992,11 +1993,12 @@ function lignesActivites(s) {
 /** Répartition des demandes adressées : activités de type « demande » puis incidents. */
 function lignesDemandes(s) {
   const L = s.interv.parType.map(g => [g.nom, String(g.n), [...g.parts].slice(0, 3).join(', ') + (g.parts.size > 3 ? '…' : '') || '—']);
+  if (s.enc.dansAdr) L.push(['Demandes reçues encore en cours', String(s.enc.dansAdr), '—']);
   const autres = autresDemandes(s); if (autres) L.push(['Autres demandes (chiffres saisis à la main)', String(autres), '—']);
   return L;
 }
 /** Demandes adressées saisies à la main au-delà de celles détaillées par les activités et les incidents. */
-function autresDemandes(s) { return s.adr.n ? Math.max(0, s.adr.total - s.interv.total) : 0;
+function autresDemandes(s) { return s.adr.n ? Math.max(0, s.adr.total - s.interv.total - (s.enc.dansAdr || 0)) : 0;
 }
 /** Modèle unique du rapport : l'écran, le PDF (HTML et Android) et l'export en découlent.
  *  detail = false : synthèse d'une à deux pages ; detail = true : synthèse + annexes complètes. */
@@ -2388,7 +2390,8 @@ function rendreJour() {
 function texteAuto(k, v) {
   const a = v.interv;
   if (k === 'enc') return 'Calculé : rien en attente (saisissez les demandes encore en cours)';
-  return `Calculé : ${a} activité${a > 1 ? 's' : ''} de type demande (modifiable)`;
+  const enc = k === 'adr' && v.enc != null && !v.encAuto ? v.enc : 0;
+  return `Calculé : ${a} activité${a > 1 ? 's' : ''} de type demande${enc ? ` + ${enc} en cours` : ''} (modifiable)`;
 }
 /** Résumé en haut de la fiche : l'essentiel du jour d'un coup d'œil. */
 function rendreResumeJour() {
